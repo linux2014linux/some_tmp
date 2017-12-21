@@ -1,0 +1,247 @@
+#include "demo.pb.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <vector>
+
+#include <iostream>
+#include <fstream>
+#include <istream>
+#include <ostream>
+#include <sstream>
+
+#include "google/protobuf/io/zero_copy_stream_impl.h"
+#include "google/protobuf/io/zero_copy_stream_impl_lite.h"
+#include "google/protobuf/io/gzip_stream.h"
+
+using namespace ::google::protobuf::io;
+
+#define PROTOBUFFER_MAX_BUFFER_SIZE 10240
+
+typedef protocol::recsys::deldup::RecItemArr PbRecItemArr;
+typedef protocol::recsys::deldup::RecItem PbRecItem;
+
+// 解压文件中的gzip压缩的pb内容
+void ungzippb(PbRecItemArr& itemarr, std::string file_name) {
+
+    std::ifstream input(file_name.c_str(), std::ifstream::in | std::ifstream::binary);
+    IstreamInputStream inputFileStream(&input);
+    GzipInputStream gzipInputStream(&inputFileStream);
+    if (!itemarr.ParseFromZeroCopyStream(&gzipInputStream)) {
+        std::cerr << "failed to parse recitemarr" << std::endl;
+    }
+
+    return;
+}
+
+// 压缩pb结构并写入文件
+void gzippb(PbRecItemArr& itemarr, std::string str_name) {
+    
+    std::ofstream output(str_name.c_str(), std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+    OstreamOutputStream outputFileStream(&output);
+    GzipOutputStream::Options options;
+    options.format = GzipOutputStream::GZIP;
+    options.compression_level = 6;
+    
+    GzipOutputStream gzipOutputStream(&outputFileStream, options);
+    if (!itemarr.SerializeToZeroCopyStream(&gzipOutputStream)) {
+        std::cerr << "Failed to write scene!" << std::endl;
+    }
+
+    return;
+}
+
+void dump_recitemarr(PbRecItemArr& itemarr) {
+    ::google::protobuf::RepeatedPtrField<PbRecItem>* p_recitem = itemarr.mutable_recitem();
+    ::google::protobuf::RepeatedPtrField<PbRecItem>::iterator recitem_it = p_recitem->begin();
+    for (; recitem_it != p_recitem->end(); ++recitem_it) {
+        std::cout << \
+            "vid=" << recitem_it->videoid() << ", " \
+            "type=" << recitem_it->type() << ", " \
+            "timestamp=" << recitem_it->timestamp() \
+            << std::endl;
+    }
+
+    return;
+}
+
+// 解压
+class CCustomStringInputStream: public google::protobuf::io::ZeroCopyInputStream
+{
+    public:
+        CCustomStringInputStream(std::string str_zipdata) {
+            m_idx = 0;
+            m_size = str_zipdata.length();
+            memcpy(m_szBuffer, str_zipdata.c_str(), str_zipdata.length());
+        }
+
+        virtual ~CCustomStringInputStream() {
+        }
+
+        virtual bool Next(const void** data, int* size) {
+            *data = m_szBuffer + m_idx;
+            *size = m_size - m_idx;
+            m_idx += m_size;
+
+            return true;
+        }
+
+        virtual void BackUp(int count) {
+            m_idx -= count;
+        }
+
+        virtual bool Skip(int count) {
+            if (m_idx + count == m_size) {
+                m_idx += count;
+
+                return false;
+            } else if (m_idx + count > m_size) {
+
+                return false;
+            }
+            m_idx += count;
+
+            return true;
+        }
+
+        virtual int64_t ByteCount() const {
+            return m_idx;
+        }
+
+    private:
+        int64_t m_idx;
+        int64_t m_size;
+        char m_szBuffer[PROTOBUFFER_MAX_BUFFER_SIZE];
+};
+
+// 压缩
+class CCustomStringOutputStream: public google::protobuf::io::ZeroCopyOutputStream
+{
+    public:
+        CCustomStringOutputStream() {
+        }
+
+        ~CCustomStringOutputStream() {
+        }
+
+        void Reset() {
+            m_idx=0;
+        }
+
+        std::string ToString() {
+            return std::string(m_szBuffer, m_idx);
+        }
+
+        virtual bool Next(void** data, int* size) {
+            *data = m_szBuffer + m_idx;
+            *size = sizeof(m_szBuffer) - m_idx;
+            m_idx += *size;
+
+            return true;
+        }
+
+        virtual void BackUp(int count) {
+            m_idx -= count;
+        }
+
+        virtual int64_t ByteCount() const {
+            return m_idx;
+        }
+
+    private:
+        int64_t m_idx;
+        char m_szBuffer[PROTOBUFFER_MAX_BUFFER_SIZE];
+};
+
+void ungzip_pb(const std::string& str_zipdata, std::string& str_outdata) {
+
+    PbRecItemArr out_recitemarr;
+    CCustomStringInputStream stream_input(str_zipdata);
+    GzipInputStream gzipInputStream(&stream_input);
+    out_recitemarr.ParseFromZeroCopyStream(&gzipInputStream);
+    out_recitemarr.SerializeToString(&str_outdata);
+
+    return;
+}
+
+int main(int argc, char* argv[]) {
+
+    PbRecItemArr itemarr;
+    ungzippb(itemarr, "my.data");
+    dump_recitemarr(itemarr);
+
+    PbRecItem item1, item2;
+    item1.set_timestamp(1111);
+    item1.set_videoid(1);
+    item1.set_type(1);
+    item2.set_timestamp(2222);
+    item2.set_videoid(2);
+    item2.set_type(2);
+    std::vector<PbRecItem> vec_recitem;
+    vec_recitem.push_back(item1);
+    vec_recitem.push_back(item2);
+
+    PbRecItemArr items1;
+    for (int idx = 0; idx < vec_recitem.size(); idx++) {
+        PbRecItem* item = items1.add_recitem();
+        *item = vec_recitem[idx];
+    }
+
+    std::string str_src;
+    items1.SerializeToString(&str_src);
+    std::cout << "src_length: " << str_src.length() << std::endl;
+
+    std::string str_zip;
+    StringOutputStream stream_output(&str_zip);
+    GzipOutputStream::Options options;
+    options.format = GzipOutputStream::GZIP;
+    options.compression_level = 6;
+    GzipOutputStream m_zip(&stream_output, options);
+    items1.SerializeToZeroCopyStream(&m_zip);
+    m_zip.Close();
+
+    std::cout << str_zip.length() << std::endl;
+
+    PbRecItemArr out_recitemarr;
+    ArrayInputStream stream_input(str_zip.data(), str_zip.length());
+    GzipInputStream gzipInputStream(&stream_input);
+    if (!out_recitemarr.ParseFromZeroCopyStream(&gzipInputStream)) {
+        std::cerr << "failed to parse recitemarr" << std::endl;
+    }
+    dump_recitemarr(out_recitemarr);
+
+    /*
+    std::string str_outdata;
+    ungzip_pb(str_zip, str_outdata);
+    PbRecItemArr test;
+    test.ParseFromString(str_outdata);
+    std::cout << "dump test" << std::endl;
+    dump_recitemarr(test);
+    */
+
+    /*
+    PbRecItemArr itemarr;
+    ungzippb(itemarr, "my.data");
+    dump_recitemarr(itemarr);
+
+    PbRecItem item1, item2;
+    item1.set_timestamp(1111);
+    item1.set_videoid(1);
+    item1.set_type(1);
+    item2.set_timestamp(2222);
+    item2.set_videoid(2);
+    item2.set_type(2);
+    std::vector<PbRecItem> vec_recitem;
+    vec_recitem.push_back(item1);
+    vec_recitem.push_back(item2);
+
+    PbRecItemArr items1;
+    for (int idx = 0; idx < vec_recitem.size(); idx++) {
+        PbRecItem* item = items1.add_recitem();
+        *item = vec_recitem[idx];
+    }
+    gzippb(items1, "my.data");
+    */
+
+    return 0;
+}

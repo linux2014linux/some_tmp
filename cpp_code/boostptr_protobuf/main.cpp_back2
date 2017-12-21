@@ -1,0 +1,42 @@
+#include "demo.pb.h"
+#include <iostream>
+#include <string>
+#include <vector>
+#include <functional>
+
+#include <boost/shared_ptr.hpp>
+#include <boost/make_shared.hpp>
+#include <boost/lexical_cast.hpp>
+
+
+typedef protocol::recsys::deldup::RecItemArr PbRecItemArr;
+typedef protocol::recsys::deldup::RecItem PbRecItem;
+
+class InnerRecItem {
+public:
+    uint64_t videoid;
+};
+
+typedef boost::shared_ptr<InnerRecItem> pInnerRecItem;
+typedef std::vector<boost::shared_ptr<InnerRecItem> > InnerRecItems;
+
+class A {
+public:
+    virtual void init() = 0;
+};
+
+class AB : public A{
+public:
+    void init() {
+        std::cout << "Im am B object." << std::endl;
+    }
+};
+
+int main(int argc, char* argv[]) {
+
+    boost::shared_ptr<A> p(new AB);
+    p->init();
+
+
+    return 0;
+}

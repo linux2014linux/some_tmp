@@ -1,0 +1,195 @@
+#include "demo.pb.h"
+#include <iostream>
+#include <string>
+#include <vector>
+#include <functional>
+
+#include <boost/shared_ptr.hpp>
+#include <boost/make_shared.hpp>
+#include <boost/lexical_cast.hpp>
+
+#include <boost/random.hpp>
+#include <boost/generator_iterator.hpp>
+
+#include <boost/random/linear_congruential.hpp>
+#include <boost/random/uniform_int.hpp>
+#include <boost/random/uniform_real.hpp>
+#include <boost/random/variate_generator.hpp>
+#include <boost/generator_iterator.hpp>
+
+typedef protocol::recsys::deldup::RecItemArr PbRecItemArr;
+typedef protocol::recsys::deldup::RecItem PbRecItem;
+
+class InnerRecItem {
+public:
+    uint64_t videoid;
+};
+
+typedef boost::shared_ptr<InnerRecItem> pInnerRecItem;
+typedef std::vector<boost::shared_ptr<InnerRecItem> > InnerRecItems;
+
+void pbto_innerrecitem(\
+        PbRecItem& recitem, \
+        pInnerRecItem innerrecitem) {
+
+    innerrecitem->videoid = recitem.videoid();
+
+    return;
+}
+
+void pbto_innerrecitems(\
+        PbRecItemArr& recitemarr, \
+        InnerRecItems& innerrecitem) {
+    
+    ::google::protobuf::RepeatedPtrField<PbRecItem>* p_recitem = \
+                                                                 recitemarr.mutable_recitem();
+    ::google::protobuf::RepeatedPtrField<PbRecItem>::iterator recitem_it = \
+                                                                           p_recitem->begin();
+    for (; recitem_it != p_recitem->end(); ++recitem_it) {
+        PbRecItem recitem = *recitem_it;
+        boost::shared_ptr<InnerRecItem> item(new InnerRecItem);
+        pbto_innerrecitem(recitem, item);
+        innerrecitem.push_back(item);
+    }
+
+    return;
+}
+
+void limit_size(PbRecItemArr& src, int limit) {
+
+    if (limit < 0) {
+        return;
+    }
+
+    int all_size = src.recitem_size();
+
+    ::google::protobuf::RepeatedPtrField<PbRecItem>* \
+        p_recitem = src.mutable_recitem();
+
+    if (all_size >= limit) {
+        std::cout << all_size << ", " << limit << std::endl;
+        int end = all_size - limit;
+        p_recitem->DeleteSubrange(0, end);
+    }
+
+    return;
+}
+
+struct special_compare : public std::unary_function<PbRecItem, bool> {
+    explicit special_compare(const PbRecItem& vid):_vid(vid) {
+    }
+    bool operator()(const PbRecItem& vid) {
+        return _vid.videoid()==vid.videoid();
+    }
+    PbRecItem _vid;
+};
+
+void out_pbitemarr(PbRecItemArr& src_recitemarr) {
+
+    ::google::protobuf::RepeatedPtrField<PbRecItem>* p_recitem \
+        = src_recitemarr.mutable_recitem();
+    ::google::protobuf::RepeatedPtrField<PbRecItem>::iterator recitem_it \
+        = p_recitem->begin();
+    for (; recitem_it != p_recitem->end(); ++recitem_it) {
+        std::cout << "pb-videoid: " << recitem_it->videoid() \
+            << ", pb-type: " << recitem_it->type()\
+            << ", pb-score: " << recitem_it->score()\
+            << std::endl;
+    }
+    std::cout << "pb-size: " << src_recitemarr.recitem_size() << std::endl;;
+
+    return;
+}
+
+void get_randomarr(int left, int right, int size, std::vector<int>& vec) {
+
+    /*
+    typedef boost::mt19937 RNGType;
+    RNGType rng;
+    boost::uniform_int<> one_to_six( 1, 6 );
+    boost::variate_generator< RNGType, boost::uniform_int<> >
+        dice(rng, one_to_six);
+    for ( int i = 0; i < 6; i++ ) {
+        int n  = dice();
+        std::cout << n << std::endl;
+    }
+*/
+    typedef boost::minstd_rand base_generator_type;
+
+    std::srand(std::time(0));
+    base_generator_type generator(std::rand());
+    boost::uniform_int<> uni_dist(left, right);
+    boost::variate_generator<base_generator_type&, boost::uniform_int<> > uni(generator, uni_dist);
+
+    std::cout.setf(std::ios::fixed);
+    for(int i = 0; i < size; i++) {
+        std::cout << uni() << '\n';
+    }
+}
+
+int main(int argc, char* argv[]) {
+
+    PbRecItem item1, item2, item3;
+    PbRecItem item4, item5, item6;
+    item1.set_videoid(23232);
+    item2.set_videoid(84552);
+    item3.set_videoid(89);
+    item4.set_videoid(23);
+    item5.set_videoid(230);
+    item6.set_videoid(45);
+    std::vector<PbRecItem> vec_recitem;
+    vec_recitem.push_back(item1);
+    vec_recitem.push_back(item2);
+    vec_recitem.push_back(item3);
+    vec_recitem.push_back(item4);
+    vec_recitem.push_back(item5);
+    vec_recitem.push_back(item6);
+
+    PbRecItemArr items1;
+    PbRecItemArr items2;
+    for (int idx = 0; idx < vec_recitem.size(); idx++) {
+        PbRecItem* item = items1.add_recitem();
+        *item = vec_recitem[idx];
+        if (idx % 2 == 0) {
+            PbRecItem* item2 = items2.add_recitem();
+            *item2 = vec_recitem[idx];
+        }
+    }
+
+    limit_size(items1, 2);
+    out_pbitemarr(items1);
+
+    std::vector<int> vec;
+    get_randomarr(0, 100, 10, vec);
+
+
+    /*
+    ::google::protobuf::RepeatedPtrField<PbRecItem>::iterator it = std::find_if(\
+            items1.mutable_recitem()->begin(), \
+            items1.mutable_recitem()->end(), \
+            special_compare(item_tmp));
+    if (it != items1.mutable_recitem()->end()) {
+        std::cout << it->videoid() << std::endl;
+    } else {
+        std::cout << "not found" << std::endl;
+    }
+    */
+
+    /*
+    PbRecItem tmp;
+    tmp.set_videoid(111);
+    boost::shared_ptr<PbRecItem> p(new PbRecItem);
+    p->MergeFrom(tmp);
+    std::cout << p->videoid() << std::endl;
+    */
+
+    /*
+    InnerRecItems innerrecitems;
+    pbto_innerrecitems(items1, innerrecitems);
+    InnerRecItems::iterator it = innerrecitems.begin();
+    for (; it != innerrecitems.end(); it++) {
+        std::cout << (*it)->videoid << std::endl;
+    }*/
+
+    return 0;
+}

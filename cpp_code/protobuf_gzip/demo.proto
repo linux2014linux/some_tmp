@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package protocol.recsys.deldup;
+
+message RecItem {
+    uint64 timestamp = 1;
+    uint32 type = 2;
+    uint64 videoid = 3;
+    double score = 4;
+    string country_code = 5;
+    string distance = 6;
+};
+
+message RecItemArr {
+    repeated RecItem recitem = 1;
+};
+
+
