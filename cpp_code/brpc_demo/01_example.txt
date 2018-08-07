@@ -1,0 +1,76 @@
+1.gflag
+    我们可以在全局作用于中使用如下方式来定义flag：
+DEFINE_int32(port, 8000, "TCP Port of this server");
+DEFINE_bool(echo_attachment, true, "Echo attachment as well");
+    使用我们可以如下：
+    FLAGS_echo_attachment或者FLAGS_port。类似于全局变量，在其他文件中引用我们可以采用如下方式：
+DECLARE_int32(port)
+DECLARE_int32(echo_attachment)
+
+2.局部析构方法
+    为了避免偶尔顽疾调用一下方法，通常会采用局部对象的析沟方法来调用这些函数：
+    void Proc() {
+        LocalObject obj(after_func);
+        /**
+         * do something
+         */
+        // obj在析沟时，自动调用after_func，避免我们手动调用，偶尔会忘记
+        return;
+    }
+
+    class LocalObject {
+    public:
+        LocalObject(function_ptr) {
+        }
+        ~LocalObject() {
+            _ptr();
+        }
+    private:
+        function_ptr _ptr;
+    };
+    这种设计来来自brpc的设计。
+
+    在一些异步服务中，可能对于一些情况，不需要调用传入的方法：
+class MyFooService: public FooService  {
+public:
+    // 同步服务
+    void SyncFoo(::google::protobuf::RpcController* cntl_base,
+                 const ::example::EchoRequest* request,
+                 ::example::EchoResponse* response,
+                 ::google::protobuf::Closure* done) {
+         brpc::ClosureGuard done_guard(done);
+         ...
+    }
+
+    // 异步服务
+    void AsyncFoo(::google::protobuf::RpcController* cntl_base,
+                  const ::example::EchoRequest* request,
+                  ::example::EchoResponse* response,
+                  ::google::protobuf::Closure* done) {
+         brpc::ClosureGuard done_guard(done);
+         ...
+         done_guard.release();
+    }
+};
+    在异步Service中，退出服务回调时请求未处理完成，done->Run()不应被调用，done应被保存下来供以后调用，乍看起来，这里并不需要用ClosureGuard。但在实践中，异步Service照样会因各种原因跳出回调，如果不使用ClosureGuard，一些分支很可能会在return前忘记done->Run()，所以我们也建议在异步service中使用done_guard，与同步Service不同的是，为了避免正常脱离函数时done->Run()也被调用，你可以调用done_guard.release()来释放其中的done。
+// RAII: Call Run() of the closure on destruction.
+class ClosureGuard {
+public:
+    ClosureGuard();
+    // Constructed with a closure which will be Run() inside dtor.
+    // 将需要调用的方法在此赋值给ClosureGuard内部成员
+    explicit ClosureGuard(google::protobuf::Closure* done);
+
+    // Call Run() of internal closure if it's not NULL.
+    // 如果成员不为NULL，那么在此调用指定的方法
+    ~ClosureGuard();
+
+    // Call Run() of internal closure if it's not NULL and set it to `done'.
+    void reset(google::protobuf::Closure* done);
+
+    // Set internal closure to NULL and return the one before set.
+    // 异步情况下，在此将成员设置为NULL，这样就可以避免调用指定的方法
+    google::protobuf::Closure* release();
+};
+
+3.

@@ -1,0 +1,13 @@
+1.计算耗时
+butil/containers/doubly_buffered_data.h
+butil::Timer timer(butil::Timer::STARTED);
+timer.stop();
+LOG(INFO) << "[" << timer.u_elapsed() << "us];
+
+耗时计算的实现在butil/time.h中，计算方法使用CPU时钟数量，不依赖系统时间。这样就避免了因时间同步导致耗时计算错误的问题。
+
+2.双buf容器
+butil/containers/doubly_buffered_data.h
+提供了一个线程安全的双buf结构，使用者只需自定义双buf的切换方式即可。
+
+3.
